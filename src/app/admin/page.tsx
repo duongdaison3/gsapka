@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Play, Square, Trash2, Rocket, Star, Users, FileText, Target, Mic, Lightbulb } from "lucide-react";
+import { Play, Square, Trash2, Rocket, Star, Users, FileText, Target, Mic, Lightbulb, Lock, Unlock } from "lucide-react";
 import confetti from "canvas-confetti";
 
 interface SubmissionRecord {
@@ -24,11 +24,12 @@ interface SubmissionRecord {
 
 export default function AdminDashboard() {
   const [submissions, setSubmissions] = useState({ q1: [], q2: [], q3: [], q4: [] });
-  const [activeTab, setActiveTab] = useState(4); // Mặc định mở Boss Cuối
+  const [activeTab, setActiveTab] = useState(4); 
   const [isStarted, setIsStarted] = useState(false);
   const [timeLeft, setTimeLeft] = useState(900);
+  // THÊM: Biến theo dõi tiến độ Trạm
+  const [currentQuest, setCurrentQuest] = useState(1);
 
-  // Polling Data
   useEffect(() => {
     const fetchData = async () => {
       try {
@@ -37,7 +38,10 @@ export default function AdminDashboard() {
 
         const gameRes = await fetch("/api/game");
         const gameData = await gameRes.json();
+        
         setIsStarted(gameData.isStarted);
+        setCurrentQuest(gameData.currentQuest || 1); // Cập nhật Trạm hiện tại
+
         if (gameData.isStarted && gameData.endTime > 0) {
           setTimeLeft(Math.max(0, Math.floor((gameData.endTime - Date.now()) / 1000)));
         } else setTimeLeft(900);
@@ -67,6 +71,20 @@ export default function AdminDashboard() {
     if (confirm("Xóa toàn bộ dữ liệu của sinh viên?")) {
       await fetch("/api/submissions", { method: "DELETE" });
       setSubmissions({ q1: [], q2: [], q3: [], q4: [] });
+    }
+  };
+
+  // THÊM: Hàm xử lý Mở khóa Trạm
+  const handleUnlockQuest = async (questId: number) => {
+    // Kiểm tra xem trạm này đã mở chưa để đổi câu hỏi cho phù hợp
+    const actionText = currentQuest >= questId ? "đặt lại tiến độ về" : "MỞ KHÓA";
+    
+    // Bật hộp thoại xác nhận
+    if (confirm(`⚠️ XÁC NHẬN: Bạn có chắc chắn muốn ${actionText} Trạm ${questId} cho toàn bộ hội trường không?`)) {
+      await fetch("/api/game", { 
+        method: "POST", 
+        body: JSON.stringify({ action: "setQuest", quest: questId }) 
+      });
     }
   };
 
@@ -100,13 +118,39 @@ export default function AdminDashboard() {
         </div>
       </header>
 
+      {/* THANH ĐIỀU KHIỂN TIẾN ĐỘ SỰ KIỆN */}
+      <div className="bg-gray-900 border border-gray-800 p-6 rounded-3xl mb-6 shadow-xl flex items-center justify-between">
+        <div>
+          <h2 className="text-xl font-bold text-white mb-1 flex items-center gap-2">
+            Điều khiển Luồng sự kiện
+          </h2>
+          <p className="text-sm text-gray-400">Sinh viên sẽ bị chặn lại nếu cố tình đi trước tiến độ.</p>
+        </div>
+        <div className="flex gap-3">
+          {[1, 2, 3, 4].map((q) => (
+            <button
+              key={q}
+              onClick={() => handleUnlockQuest(q)}
+              className={`px-6 py-3 rounded-xl font-bold flex items-center gap-2 transition-all ${
+                currentQuest >= q
+                  ? "bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-500/30"
+                  : "bg-gray-800 text-gray-500 hover:bg-gray-700 border border-gray-700"
+              }`}
+            >
+              {currentQuest >= q ? <Unlock size={18} /> : <Lock size={18} />}
+              Mở Trạm {q}
+            </button>
+          ))}
+        </div>
+      </div>
+
       {/* TABS CHUYỂN TRẠM */}
       <div className="flex gap-2 mb-6">
         {[
-          { id: 1, name: "Trạm 1: Sửa CV", icon: <FileText size={18}/> },
-          { id: 2, name: "Trạm 2: Quét JD", icon: <Target size={18}/> },
-          { id: 3, name: "Trạm 3: HR Voice", icon: <Mic size={18}/> },
-          { id: 4, name: "Trạm 4: Startup", icon: <Lightbulb size={18}/> },
+          { id: 1, name: "Data Trạm 1", icon: <FileText size={18}/> },
+          { id: 2, name: "Data Trạm 2", icon: <Target size={18}/> },
+          { id: 3, name: "Data Trạm 3", icon: <Mic size={18}/> },
+          { id: 4, name: "Data Trạm 4", icon: <Lightbulb size={18}/> },
         ].map((tab) => (
           <button
             key={tab.id}
@@ -134,7 +178,6 @@ export default function AdminDashboard() {
                 <span className="text-gray-600 text-xs">{new Date(record.createdAt).toLocaleTimeString()}</span>
               </div>
 
-              {/* Tùy chỉnh hiển thị theo từng trạm */}
               {activeTab === 1 && (
                 <>
                   <p className="text-xs text-blue-400 mb-2">{record.data.cvType}</p>
