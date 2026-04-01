@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Play, Square, Trash2, Rocket, Star, Users, FileText, Target, Mic, Lightbulb, Lock, Unlock } from "lucide-react";
+import { Play, Square, Trash2, Rocket, Star, Users, FileText, Target, Mic, Lightbulb, Lock, Unlock, KeyRound } from "lucide-react";
 import confetti from "canvas-confetti";
 
 interface SubmissionRecord {
@@ -23,14 +23,38 @@ interface SubmissionRecord {
 }
 
 export default function AdminDashboard() {
+  // --- AUTH STATE (Bảo mật màn hình Admin) ---
+  const [isAuthenticated, setIsAuthenticated] = useState(() => {
+    if (typeof window !== "undefined") {
+      return sessionStorage.getItem("admin_auth_gemini") === "true";
+    }
+    return false;
+  });
+  const [passcode, setPasscode] = useState("");
+
   const [submissions, setSubmissions] = useState({ q1: [], q2: [], q3: [], q4: [] });
   const [activeTab, setActiveTab] = useState(4); 
   const [isStarted, setIsStarted] = useState(false);
   const [timeLeft, setTimeLeft] = useState(900);
-  // THÊM: Biến theo dõi tiến độ Trạm
   const [currentQuest, setCurrentQuest] = useState(1);
 
+  const handleLogin = (e: React.FormEvent) => {
+    e.preventDefault();
+    // ĐỔI MẬT KHẨU CỦA CẬU Ở ĐÂY:
+    if (passcode === "pea2026") {
+      setIsAuthenticated(true);
+      sessionStorage.setItem("admin_auth_gemini", "true"); // Lưu lại để F5 không bị văng ra
+    } else {
+      alert("Mật khẩu không chính xác! Hãy nhập lại.");
+      setPasscode("");
+    }
+  };
+
+
+  // Polling Data (Chỉ gọi API khi đã đăng nhập thành công để tiết kiệm tài nguyên)
   useEffect(() => {
+    if (!isAuthenticated) return;
+
     const fetchData = async () => {
       try {
         const subRes = await fetch("/api/submissions");
@@ -40,7 +64,7 @@ export default function AdminDashboard() {
         const gameData = await gameRes.json();
         
         setIsStarted(gameData.isStarted);
-        setCurrentQuest(gameData.currentQuest || 1); // Cập nhật Trạm hiện tại
+        setCurrentQuest(gameData.currentQuest || 1);
 
         if (gameData.isStarted && gameData.endTime > 0) {
           setTimeLeft(Math.max(0, Math.floor((gameData.endTime - Date.now()) / 1000)));
@@ -51,7 +75,7 @@ export default function AdminDashboard() {
     fetchData();
     const interval = setInterval(fetchData, 2000);
     return () => clearInterval(interval);
-  }, []);
+  }, [isAuthenticated]);
 
   useEffect(() => {
     if (isStarted && timeLeft > 0) {
@@ -68,18 +92,14 @@ export default function AdminDashboard() {
   };
 
   const handleClear = async () => {
-    if (confirm("Xóa toàn bộ dữ liệu của sinh viên?")) {
+    if (confirm("⚠️ Xóa toàn bộ dữ liệu bài nộp của sinh viên?")) {
       await fetch("/api/submissions", { method: "DELETE" });
       setSubmissions({ q1: [], q2: [], q3: [], q4: [] });
     }
   };
 
-  // THÊM: Hàm xử lý Mở khóa Trạm
   const handleUnlockQuest = async (questId: number) => {
-    // Kiểm tra xem trạm này đã mở chưa để đổi câu hỏi cho phù hợp
     const actionText = currentQuest >= questId ? "đặt lại tiến độ về" : "MỞ KHÓA";
-    
-    // Bật hộp thoại xác nhận
     if (confirm(`⚠️ XÁC NHẬN: Bạn có chắc chắn muốn ${actionText} Trạm ${questId} cho toàn bộ hội trường không?`)) {
       await fetch("/api/game", { 
         method: "POST", 
@@ -90,6 +110,42 @@ export default function AdminDashboard() {
 
   const currentData = submissions[`q${activeTab}` as keyof typeof submissions] || [];
 
+  // === MÀN HÌNH KHÓA (BẢO MẬT) ===
+  if (!isAuthenticated) {
+    return (
+      <main className="min-h-screen bg-gray-950 flex items-center justify-center p-4">
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="bg-gray-900 border border-gray-800 p-8 rounded-3xl shadow-2xl w-full max-w-md text-center"
+        >
+          <div className="bg-blue-600/20 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6">
+            <KeyRound size={40} className="text-blue-500" />
+          </div>
+          <h1 className="text-2xl font-black text-white mb-2">Khu Vực Tuyệt Mật</h1>
+          <p className="text-gray-400 mb-6">Chỉ dành cho Ban Tổ Chức (Speaker).</p>
+          <form onSubmit={handleLogin} className="space-y-4">
+            <input
+              type="password"
+              value={passcode}
+              onChange={(e) => setPasscode(e.target.value)}
+              placeholder="Nhập mật khẩu truy cập..."
+              className="w-full bg-gray-950 border border-gray-800 text-white px-4 py-4 rounded-xl focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none text-center tracking-widest text-lg"
+              autoFocus
+            />
+            <button
+              type="submit"
+              className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-4 rounded-xl transition-colors shadow-lg shadow-blue-500/30"
+            >
+              Vào Dashboard
+            </button>
+          </form>
+        </motion.div>
+      </main>
+    );
+  }
+
+  // === GIAO DIỆN ADMIN CHÍNH ===
   return (
     <main className="min-h-screen bg-gray-950 text-white p-6 overflow-hidden">
       {/* HEADER & CONTROL PANEL */}
@@ -113,7 +169,7 @@ export default function AdminDashboard() {
             ) : (
               <button onClick={() => fetch("/api/game", { method: "POST", body: JSON.stringify({ action: "reset" }) })} className="px-4 py-3 bg-orange-500 rounded-xl font-bold flex items-center gap-2"><Square size={20} /> Stop</button>
             )}
-            <button onClick={handleClear} className="p-3 bg-gray-800 hover:text-red-400 rounded-xl"><Trash2 size={24} /></button>
+            <button onClick={handleClear} className="p-3 bg-gray-800 hover:text-red-400 rounded-xl" title="Xóa toàn bộ Data"><Trash2 size={24} /></button>
           </div>
         </div>
       </header>
